@@ -1,0 +1,20 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ClickEvennt : MonoBehaviour
+{
+    private ObjectInteraction interaction;
+    //private GameObject CarPrefab;
+
+
+    private void Start()
+    {
+        interaction = Object.FindFirstObjectByType<ObjectInteraction>();
+    }
+
+    public void OnClick()
+    {         
+        interaction.Onclick();  
+    }
+}
