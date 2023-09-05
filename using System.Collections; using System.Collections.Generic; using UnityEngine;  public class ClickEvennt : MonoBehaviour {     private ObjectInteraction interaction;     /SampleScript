@@ -1,0 +1,62 @@
+using System;
+using System.IO;
+using UnityEngine;
+
+public class SampleDataManager : MonoBehaviour
+{
+    [System.Serializable]
+    public class SampleData
+    {
+        public string objectType;
+        public Matrix4x4 Intrinsic;
+        public Matrix4x4 Extrinsic;
+        public Vector3 cameraPositionStart;
+        public Quaternion cameraRotationStart;
+        public Vector3 cameraPositionTouch;
+        public Quaternion cameraRotationTouch;
+        public Vector3 objectPosition;
+        public Vector3 distortionVector;
+        public float scalingFactor;
+        public Color objectColor;
+        public float actionTime;
+        public float timeBetweenAppearAndTouch;
+        public string ArrowEulerAngles;
+        public float fittsLawResult;
+        public float movementTime;
+    }
+    public static void SaveSampleData(
+        string objectType,
+        Matrix4x4 Intrinsic,
+        Matrix4x4 Extrinsic,
+        Vector3 cameraPositionStart,
+        Quaternion cameraRotationStart,
+        Vector3 cameraPositionTouch,
+        Quaternion cameraRotationTouch,
+        Vector3 objectPosition,
+        Vector3 distortionVector,
+        float scalingFactor,
+        Color objectColor,
+        float actionTime,
+        float timeBetweenAppearAndTouch,
+        string ArrowEulerAngles,
+        float fittsLawResult,
+        float movementTime)
+    {
+        // Create a CSV formatted string from the data
+        string csvData = $"{objectType},{Intrinsic},{Extrinsic},{cameraPositionStart},{cameraRotationStart},{cameraPositionTouch},{cameraRotationTouch},{objectPosition},{distortionVector},{scalingFactor},{objectColor},{actionTime},{timeBetweenAppearAndTouch},{ArrowEulerAngles},{fittsLawResult},{movementTime}";
+
+        // Define the file path within the Documents folder
+        string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "yourData.csv");
+
+        // Check if the file already exists, and if not, create it with a header
+        bool fileExists = File.Exists(filePath);
+        if (!fileExists)
+        {
+            string header = "objectType,PSjkIntrinsic,PTjkExtrinsic,cameraPositionStart,cameraRotationStart,cameraPositionTouch,cameraRotationTouch,objectPosition,distortionVector,scalingFactor,objectColor,actionTime,timeBetweenAppearAndTouch,ArrowEulerAngles,fittsLawResult,movementTime";
+            File.WriteAllText(filePath, header + Environment.NewLine);
+        }
+
+        // Append the data to the CSV file
+        File.AppendAllText(filePath, csvData + Environment.NewLine);
+    }
+}
