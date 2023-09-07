@@ -1,0 +1,375 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.IO;
+using System.Text;
+using System;
+
+
+public class ObjectInteraction : MonoBehaviour
+{
+    public GameObject SphereObject;
+    public GameObject CubeObject;
+    public GameObject CarObject;
+    public GameObject arrowPrefab;
+    private Vector3 arrowPosition = new Vector3(0.0f, -1.0f, 4.0f);
+    private Vector3 arrowScale = new Vector3(2.0f, 20.0f, 20.0f);
+    private Vector3 cameraPositionAtArrowAppear;
+    private Quaternion cameraRotationAtArrowAppear;
+    private int chosenObjectType;
+    private Color initialObjectColor;
+    public Vector3 distortionVector;
+    public float scalingFactor = 1f;
+    private GameObject instantiatedArrow;
+    private GameObject instantiatedObject;
+    private Camera mainCamera;
+    private float arrowAppearTimeMicros;
+    private float movementTime;
+    private string ArrowEulerAngles;
+    private SampleDataManager.SampleData sampleData;
+    private string mResFilename = "resolution.txt";
+    private string mExcept;
+    private int mWidth;
+    private int mHeight;
+
+    private List<SampleDataManager.SampleData> collectedObjectDataList = new List<SampleDataManager.SampleData>();
+
+
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        mExcept = "";
+        mExcept = "";
+        mWidth = 0; 
+        mHeight = 0;
+        mainCamera = Camera.main;
+        arrowCreate();
+        DrawObjectType();
+        sampleData = new SampleDataManager.SampleData();
+        Onclick();
+        cameraRotationAtArrowAppear = Camera.main.transform.rotation;
+        arrowAppearTimeMicros = Time.realtimeSinceStartup * 1000000f;
+        ReadResolution();
+
+    }
+    private void arrowCreate()
+    {
+        // Instantiate the arrow object
+        instantiatedArrow = Instantiate(arrowPrefab, arrowPosition, Quaternion.identity);
+        instantiatedArrow.transform.localScale = arrowScale;
+        instantiatedArrow.SetActive(true); // Make sure the arrow is active
+
+        // Store the initial camera position and rotation
+        cameraPositionAtArrowAppear = Camera.main.transform.position;
+        cameraRotationAtArrowAppear = Camera.main.transform.rotation;
+
+        // Rotate the arrow to face the camera initially
+        instantiatedArrow.transform.LookAt(Camera.main.transform);
+        // Calculate and record the time when the arrow appears
+        arrowAppearTimeMicros = Time.realtimeSinceStartup * 1000000f;
+    }
+    public void DrawObjectType()
+    {
+        // Generate random properties for the object
+        float radius = UnityEngine.Random.Range(0.0f, 4.0f); // Example range for radius
+        float inclination = UnityEngine.Random.Range(0.0f, Mathf.PI);
+        float azimuth = UnityEngine.Random.Range(0.0f, Mathf.PI);
+        distortionVector = new Vector3(UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f));
+        scalingFactor = UnityEngine.Random.Range(0.3f, 0.5f);
+        Color color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value);
+
+        // Choose a random object type
+        int objectType = UnityEngine.Random.Range(0, 3); // 0: Sphere, 1: Cube, 2: Mesh
+
+        // Instantiate the chosen object type
+        instantiatedObject = null;
+        switch (objectType)
+        {
+            case 0:
+                instantiatedObject = Instantiate(SphereObject);
+                break;
+            case 1:
+                instantiatedObject = Instantiate(CubeObject);
+                break;
+            case 2:
+                instantiatedObject = Instantiate(CarObject);
+                break;
+        }
+        if (instantiatedObject)
+        {
+            Vector3 objectPosition = new Vector3(radius * Mathf.Sin(inclination) * Mathf.Cos(azimuth),
+                                                radius * Mathf.Sin(inclination) * Mathf.Sin(azimuth),
+                                                radius * Mathf.Cos(inclination));
+            instantiatedObject.transform.position = objectPosition;
+            instantiatedObject.transform.localScale = distortionVector * scalingFactor;
+            instantiatedObject.GetComponent<Renderer>().material.color = color;
+            // Calculate direction from arrow to object
+            Vector3 direction = (objectPosition - arrowPosition).normalized;
+            Quaternion rotation = Quaternion.LookRotation(direction);
+            instantiatedArrow.transform.rotation = rotation;
+
+            SphereCollider collider = instantiatedObject.AddComponent<SphereCollider>();
+            collider.radius = 1.0f; // Adjust the radius as needed
+            chosenObjectType = objectType;
+
+        }
+    }
+
+    public void ChangeObjectColor()
+    {
+        // Generate a new random color
+        Color newColor = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value);
+
+        // Change the color of the instantiated object
+        instantiatedObject.GetComponent<Renderer>().material.color = newColor;
+
+        // Update the initial object color
+        initialObjectColor = newColor;
+    }
+    public void Onclick()
+    {
+        if (instantiatedObject != null)
+        {
+            // Change the object's color
+            ChangeObjectColor();
+            // Calculate distance to the target
+            float distanceToTarget = Vector3.Distance(Camera.main.transform.position, instantiatedObject.transform.position);
+            // Convert target width to pixels
+            float targetWidthPixels = ConvertUnityToPixels(distortionVector.magnitude * scalingFactor);
+            // Calculate Fitt's Law
+            movementTime = CalculateFittsLaw(distanceToTarget, targetWidthPixels);
+            sampleData.fittsLawResult = movementTime;
+
+            // Create a new SampleData instance and populate it with data
+            SampleDataManager.SampleData interactionData = new SampleDataManager.SampleData();
+            interactionData.objectType = GetObjectTypeString(); // Set the object type
+            interactionData.Intrinsic = CalculateIntrinsicMatrix(); // Calculate and set intrinsic matrix
+            interactionData.Extrinsic = CalculateExtrinsicMatrix(); // Calculate and set extrinsic matrix
+            interactionData.cameraPositionStart = cameraPositionAtArrowAppear; // Set camera position at arrow appear
+            interactionData.cameraRotationStart = cameraRotationAtArrowAppear; // Set camera rotation at arrow appear
+            interactionData.cameraPositionTouch = Camera.main.transform.position; // Set camera position at touch
+            interactionData.cameraRotationTouch = Camera.main.transform.rotation; // Set camera rotation at touch
+            interactionData.objectPosition = instantiatedObject.transform.position; // Set object position
+            interactionData.distortionVector = distortionVector; // Set distortion vector
+            interactionData.scalingFactor = scalingFactor; // Set scaling factor
+            interactionData.objectColor = initialObjectColor; // Set object color
+            interactionData.actionTime = Time.realtimeSinceStartup * 1000000f - arrowAppearTimeMicros; // Set action time
+            interactionData.timeBetweenAppearAndTouch = arrowAppearTimeMicros; // Set time between appear and touch
+            interactionData.ArrowEulerAngles = ArrowEulerAngles; // Set arrow euler angles
+            interactionData.movementTime = movementTime; // Set Fitt's Law result
+
+            // Add the interaction data to the list
+            collectedObjectDataList.Add(interactionData);
+
+            // Save the object data
+            SaveAllObjectData();
+        }
+
+        StartCoroutine(ChangeColorSaveAndInstantiate());
+    }
+
+
+    private float ConvertUnityToPixels(float unityValue)
+    {
+        float pixelsPerUnit = Screen.dpi / 2.54f; // Convert DPI to pixels per cm
+        return unityValue * pixelsPerUnit;
+    }
+
+    private float CalculateFittsLaw(float distanceToTarget, float targetWidthPixels)
+    {
+        float a = 0.1f; // Movement time coefficient
+        float b = 0.1f; // Width of the target (in Unity units)
+        return a + b * Mathf.Log(distanceToTarget / targetWidthPixels + 1, 2);
+    }
+    private IEnumerator ChangeColorSaveAndInstantiate()
+    {
+
+        // Wait for a few seconds before destroying and creating new objects
+        yield return new WaitForSeconds(3f);
+
+        // Destroy the old instantiated object
+        if (instantiatedObject != null)
+        {
+            Destroy(instantiatedObject);
+        }
+        // Instantiate a new object and perform necessary actions
+        DrawObjectType();
+    }
+    private string GetObjectTypeString()
+    {
+        if (chosenObjectType == 0) return "S";
+        if (chosenObjectType == 1) return "C";
+        if (chosenObjectType == 2) return "M";
+        return "-";
+    }
+    private Matrix4x4 CalculateExtrinsicMatrix()
+    {
+        // Calculate the extrinsic matrix based on the estimated camera pose
+        Vector3 cameraPosition = Camera.main.transform.position;
+        Quaternion cameraRotation = Camera.main.transform.rotation;
+        Matrix4x4 extrinsicMatrix = Matrix4x4.TRS(cameraPosition, cameraRotation, Vector3.one);
+
+        return extrinsicMatrix;
+    }
+    private Matrix4x4 CalculateIntrinsicMatrix()
+    {
+        float focalLength = Camera.main.fieldOfView;
+        float aspect = Camera.main.aspect;
+        float sensorWidth = Camera.main.sensorSize.x;
+        // Calculate the intrinsic matrix based on the estimated parameters
+        Matrix4x4 intrinsicMatrix = Matrix4x4.identity;
+        intrinsicMatrix[0, 0] = focalLength / aspect;
+        intrinsicMatrix[1, 1] = focalLength;
+        intrinsicMatrix[0, 2] = Camera.main.pixelWidth / 2.0f;
+        intrinsicMatrix[1, 2] = Camera.main.pixelHeight / 2.0f;
+
+        return intrinsicMatrix;
+    }
+    private void SaveAllObjectData()
+    {
+        // Define the directory path where you want to save the CSV file
+        string directoryPath = Path.Combine(Application.persistentDataPath, "ExperimentResults");
+       
+            // Create the directory if it doesn't exist
+            Directory.CreateDirectory(directoryPath);
+
+        // Generate a timestamp for the filename
+        string timeStamp = System.DateTime.Now.ToString("yyyyMMddHHmmssfff");
+        string fileName = "sampledata_" + timeStamp + ".csv";
+
+        // Define the full path to the CSV file
+        string savePath = Path.Combine(directoryPath, fileName);
+
+        // Create a StringBuilder to build the CSV content
+        StringBuilder csvBuilder = new StringBuilder();
+
+        // Add CSV header (column names)
+        csvBuilder.AppendLine("ObjectType,PSjkIntrinsic,PTjkExtrinsic,cameraPositionStart,cameraRotationStart,cameraPositionTouch,cameraRotationTouch,objectPosition,distortionVector,scalingFactor,objectColor,actionTime,timeBetweenAppearAndTouch,ArrowEulerAngles,fittsLawResult,movementTime,ResolutionWidth,ResolutionHeight");
+
+        // Iterate through the collected object data and append it to the CSV
+        foreach (var data in collectedObjectDataList)
+        {
+            // Format the data as a CSV line
+            string csvLine = string.Format(
+                "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17}",
+                data.objectType,
+                MatrixToString(data.Intrinsic),
+                MatrixToString(data.Extrinsic),
+                VectorToString(data.cameraPositionStart),
+                QuaternionToString(data.cameraRotationStart),
+                VectorToString(data.cameraPositionTouch),
+                QuaternionToString(data.cameraRotationTouch),
+                VectorToString(data.objectPosition),
+                VectorToString(data.distortionVector),
+                data.scalingFactor,
+                ColorToString(data.objectColor),
+                data.actionTime,
+                data.timeBetweenAppearAndTouch,
+                data.ArrowEulerAngles,
+                data.fittsLawResult,
+                data.movementTime,
+                mWidth, // Add resolution width
+                mHeight // Add resolution height
+            );
+
+            // Append the CSV line to the StringBuilder
+            csvBuilder.AppendLine(csvLine);
+        }
+
+        // Write the CSV content to the file
+        File.WriteAllText(savePath, csvBuilder.ToString());
+    }
+
+
+    // Helper methods to convert data types to strings
+    private string MatrixToString(Matrix4x4 matrix)
+    {
+        // Convert the matrix to a string (you can define your own format)
+        return matrix.ToString("F6");
+    }
+
+    private string VectorToString(Vector3 vector)
+    {
+        // Convert the vector to a string (you can define your own format)
+        return vector.ToString("F6");
+    }
+
+    private string QuaternionToString(Quaternion quaternion)
+    {
+        // Convert the quaternion to a string (you can define your own format)
+        return quaternion.ToString("F6");
+    }
+
+    private string ColorToString(Color color)
+    {
+        // Convert the color to a string (you can define your own format)
+        return color.ToString("F6");
+    }
+    void ReadResolution()
+    {
+        string path = Path.Combine(Application.persistentDataPath, mResFilename);
+        mExcept = $"No exceptions thrown by file IO while writing to \n\"{path}\".";
+        if (System.IO.File.Exists(path) && new FileInfo(path).Length > 0)
+        {
+            try
+            {
+                StreamReader reader = new StreamReader(path);
+                if (reader != null)
+                {
+                    string content = reader.ReadToEnd();
+                    string[] split = content.Split(' ');                  
+                    mWidth = int.Parse(split[0]);
+                    mHeight = int.Parse(split[1]);
+
+                }
+            }
+            catch (Exception e)
+            {
+                mExcept = "File Read Exception: " + e.Message;
+            }
+        }
+        else
+        {
+            try
+            {
+                using (TextWriter writer = File.CreateText(path))
+                {
+                    string line = mWidth.ToString() + " " + mHeight.ToString();
+                    writer.WriteLine(line);
+                }
+            }
+            catch (Exception e)
+            {
+                mExcept = "File Write Exception: " + e.Message;
+            }
+        }
+        Debug.Log(mExcept);
+    }
+    // Update is called once per frame
+    void Update()
+    {
+        if (instantiatedArrow != null && instantiatedObject != null)
+        {
+            // Get the camera's position and rotation
+            Vector3 cameraPosition = Camera.main.transform.position;
+            Quaternion cameraRotation = Camera.main.transform.rotation;
+
+            Debug.Log("Camera Position: " + cameraPosition);
+            Debug.Log("Camera Rotation: " + cameraRotation.eulerAngles);
+
+            // Update the arrow's position to follow the camera
+            instantiatedArrow.transform.position = cameraPosition + cameraRotation * arrowPosition;
+            // Calculate the direction from the arrow's position to the object's position
+            Vector3 directionToObject = instantiatedObject.transform.position - instantiatedArrow.transform.position;
+            // Set the rotation of the arrow to point in the direction of the object
+            Quaternion arrowRotation = Quaternion.LookRotation(directionToObject, Vector3.up);
+            instantiatedArrow.transform.rotation = arrowRotation;
+            Vector3 arrowRotationAngles = arrowRotation.eulerAngles;
+            float arrowYawAngle = arrowRotationAngles.y;     // Yaw angle
+            float arrowPitchAngle = arrowRotationAngles.x;   // Pitch angle
+            float arrowRollAngle = arrowRotationAngles.z;    // Roll angle
+            ArrowEulerAngles = $"{arrowYawAngle},{arrowPitchAngle},{arrowRollAngle}";
+        }
+    }
+}
