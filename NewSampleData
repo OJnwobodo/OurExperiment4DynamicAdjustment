@@ -1,0 +1,92 @@
+using UnityEngine;
+using System;
+using System.IO;
+using System.Text;
+
+public class SampleDataManager : MonoBehaviour
+{
+    [System.Serializable]
+    public class SampleData
+    {
+        public string objectType;
+        public Matrix4x4 Intrinsic;
+        public Matrix4x4 Extrinsic;
+        public Vector3 cameraPositionStart;
+        public Quaternion cameraRotationStart;
+        public Vector3 cameraPositionTouch;
+        public Quaternion cameraRotationTouch;
+        public Vector3 objectPosition;
+        public Vector3 distortionVector;
+        public float scalingFactor;
+        public Color objectColor;
+        public float actionTime;
+        public float timeBetweenAppearAndTouch;
+        public string ArrowEulerAngles;
+        public float fittsLawResult;
+        public float movementTime;
+    }
+
+    public static void SaveSampleData(SampleData data)
+    {
+        try
+        {
+            // Define the file path for saving data (using Application.persistentDataPath)
+            string filePath = Path.Combine(Application.persistentDataPath, "sample.txt");
+
+            // Serialize the data as a CSV line
+            string csvLine = $"{data.objectType},{MatrixToString(data.Intrinsic)},{MatrixToString(data.Extrinsic)},{VectorToString(data.cameraPositionStart)},{QuaternionToString(data.cameraRotationStart)},{VectorToString(data.cameraPositionTouch)},{QuaternionToString(data.cameraRotationTouch)},{VectorToString(data.objectPosition)},{VectorToString(data.distortionVector)},{data.scalingFactor},{ColorToString(data.objectColor)},{data.actionTime},{data.timeBetweenAppearAndTouch},{data.ArrowEulerAngles},{data.fittsLawResult},{data.movementTime}";
+
+            // Check if the file exists, and if not, create it with a header
+            if (!File.Exists(filePath))
+            {
+                string header = "objectType,PSjkIntrinsic,PTjkExtrinsic,cameraPositionStart,cameraRotationStart,cameraPositionTouch,cameraRotationTouch,objectPosition,distortionVector,scalingFactor,objectColor,actionTime,timeBetweenAppearAndTouch,ArrowEulerAngles,fittsLawResult,movementTime";
+                File.WriteAllText(filePath, header + Environment.NewLine);
+            }
+
+            // Append the data to the CSV file
+            File.AppendAllText(filePath, csvLine + Environment.NewLine);
+        }
+        catch (Exception ex)
+        {
+            // Handle exceptions here
+            Debug.LogError("Error saving sample data: " + ex.Message);
+        }
+    }
+
+    private static string MatrixToString(Matrix4x4 matrix)
+    {
+        // Create a string representation of the Matrix4x4
+        string result = "";
+
+        for (int row = 0; row < 4; row++)
+        {
+            for (int col = 0; col < 4; col++)
+            {
+                // Append each element of the matrix to the result string
+                result += matrix[row, col].ToString() + ",";
+            }
+        }
+
+        // Remove the trailing comma and return the result
+        return result.TrimEnd(',');
+    }
+
+    private static string VectorToString(Vector3 vector)
+    {
+        // Convert the Vector3 to a string in the format "(x, y, z)"
+        return $"({vector.x}, {vector.y}, {vector.z})";
+    }
+
+    private static string QuaternionToString(Quaternion quaternion)
+    {
+        // Convert the Quaternion to a string in the format "(x, y, z, w)"
+        return $"({quaternion.x}, {quaternion.y}, {quaternion.z}, {quaternion.w})";
+    }
+
+
+    private static string ColorToString(Color color)
+    {
+        // Convert the Color to a string in the format "(r, g, b, a)"
+        return $"({color.r}, {color.g}, {color.b}, {color.a})";
+    }
+}
