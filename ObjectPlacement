@@ -1,0 +1,487 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.XR;
+using UnityEngine.XR.WSA.Input;
+using Microsoft.MixedReality.Toolkit.Input;
+using System;
+using System.IO;
+
+public class ObjectPlacement : MonoBehaviour
+{
+    public GameObject SphereObject;
+    public GameObject CubeObject;
+    public GameObject CarObject;
+    public GameObject arrowPrefab;
+    private Vector3 arrowPosition = new Vector3(0.0f, -1.0f, 4.0f);
+    private Vector3 arrowScale = new Vector3(2.0f, 20.0f, 20.0f);
+    private Vector3 cameraPositionAtArrowAppear;
+    private Quaternion cameraRotationAtArrowAppear;
+    private Vector3 cameraPositionAtStart;
+    private Quaternion cameraRotationAtStart;
+    private Vector3 cameraPositionWhenClicked;
+    private Quaternion cameraRotationWhenClicked;
+    private int chosenObjectType;
+    private string Color;
+    public Vector3 distortionVector;
+    public float scalingFactor = 1f;
+    private GameObject instantiatedArrow;
+    private GameObject instantiatedObject;
+    private GameObject prefabToInstantiate;
+    private Camera mainCamera;
+    private float arrowAppearTimeMicros;
+    public float distanceFromCamera = 2f;
+    public float yOffset = 0f;
+    public Transform headTransform;
+    public float minDistance = 0.3f;
+    public float maxDistance = 0.6f;
+    public GameObject thankYouObject;
+    private int vQuadrant;
+    private int hQuadrant;
+    private double alphaHLoD;
+    private double betaVLoD;
+    private float distance;
+    private Vector3 objectPosition;
+    private string userName = "OJ";
+    private string sampleID = null;
+    private string sessionID = null;
+    public SaveExperiment saveExperiment;
+    private string rootDataFolder;
+    public UserData userData;
+
+    public void GenerateSample()
+
+    {
+      
+        string sessionID = $"{userName}SS001"; 
+        string sampleID = $"{userName}SA001";    
+        
+    }
+
+    public class MeasurementData
+    {
+        public string SampleID { get; set; }
+        public string SessionID { get; set; }
+        public string UserName { get; set; }
+        public string ObjectType { get; set; }
+        public Matrix4x4 Intrinsic { get; set; }
+        public Matrix4x4 Extrinsic { get; set; }
+        public Vector3 cameraPositionAtStart { get; set; }
+        public Quaternion cameraRotationAtStart { get; set; }
+        public Vector3 cameraPositionWhenClicked { get; set; }
+        public Quaternion cameraRotationWhenClicked { get; set; }
+        public Vector3 objectPosition { get; set; }
+        public Vector3 distortionVector { get; set; }
+        public float scalingFactor { get; set; }
+        public int vQuadrant { get; set; }
+        public int hQuadrant { get; set; }
+        public double alphaHLoD { get; set; }
+        public double betaVLoD { get; set; }
+        public double distance { get; set; }
+        public string Color { get; set; }
+    }
+
+
+    List<MeasurementData> measurements = new List<MeasurementData>();
+    List<string> userNames = new List<string>();
+
+
+    void Start()
+    {
+        mainCamera = Camera.main;
+        cameraPositionAtStart = mainCamera.transform.position;
+        cameraRotationAtStart = mainCamera.transform.rotation;
+        arrowCreate();
+        DrawObjectPositions();
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(false);
+        }
+        if (saveExperiment != null)
+        {
+            // Load user data
+            saveExperiment.LoadUserData();
+
+            // Access user data
+            //userName = saveExperiment.LoadUserData.userName;
+            //sessionID = saveExperiment.userData.SessionID;
+        }
+        else
+        {
+            Debug.LogWarning("SaveExperiment script not found.");
+        }
+        rootDataFolder = Path.Combine(Application.persistentDataPath, "MeasurementData");
+
+        // Ensure the root folder exists
+        if (!Directory.Exists(rootDataFolder))
+        {
+            Directory.CreateDirectory(rootDataFolder);
+        }
+
+        // Load previously saved measurement data, if available
+        LoadMeasurementData();
+    }
+
+    private void arrowCreate()
+    {
+        instantiatedArrow = Instantiate(arrowPrefab, arrowPosition, Quaternion.identity);
+        instantiatedArrow.transform.localScale = arrowScale;
+        instantiatedArrow.SetActive(true);        
+        cameraPositionAtArrowAppear = Camera.main.transform.position;
+        cameraRotationAtArrowAppear = Camera.main.transform.rotation;
+        instantiatedArrow.transform.LookAt(Camera.main.transform);       
+        arrowAppearTimeMicros = Time.realtimeSinceStartup;
+      
+    }
+
+    public void DrawObjectPositions()
+    {        
+        hQuadrant = UnityEngine.Random.Range(1, 5);
+        vQuadrant = UnityEngine.Random.Range(1, 5);
+        alphaHLoD = (Mathf.PI / 4) * hQuadrant;
+        betaVLoD = (Mathf.PI / 4) * vQuadrant;
+
+        double x = (double)mainCamera.transform.position.x + Math.Sin(alphaHLoD) * Math.Cos(betaVLoD) * distanceFromCamera;
+        double y = (double)mainCamera.transform.position.y + Math.Sin(betaVLoD) * distanceFromCamera + yOffset;
+        double z = (double)mainCamera.transform.position.z + Math.Cos(alphaHLoD) * Math.Cos(betaVLoD) * distanceFromCamera;
+        distance = UnityEngine.Random.Range((float)minDistance, (float)maxDistance);
+        objectPosition = headTransform.position + new Vector3((float)x, (float)y, (float)z) * (float)distance;
+        int objectType = UnityEngine.Random.Range(0, 3);
+
+        prefabToInstantiate = null;
+        switch (objectType)
+        {
+            case 0:
+                prefabToInstantiate = SphereObject;
+                break;
+            case 1:
+                prefabToInstantiate = CubeObject;
+                break;
+            case 2:
+                prefabToInstantiate = CarObject;
+                break;
+        }
+
+        if (prefabToInstantiate)
+        {          
+            instantiatedObject = Instantiate(prefabToInstantiate, objectPosition, Quaternion.identity);
+            distortionVector = new Vector3(UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f));
+            scalingFactor = UnityEngine.Random.Range(0.3f, 0.5f);
+            Color color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value);
+            instantiatedObject.transform.localScale = distortionVector * scalingFactor;
+            instantiatedObject.GetComponent<Renderer>().material.color = color;     
+            instantiatedArrow.transform.LookAt(instantiatedObject.transform);
+            SphereCollider collider = instantiatedObject.AddComponent<SphereCollider>();
+            collider.radius = 1.0f;          
+        }
+    }
+    public void OnInputClicked()
+    {
+        if (instantiatedObject != null)
+        {   
+            float currentTime = Time.time;
+            cameraPositionWhenClicked = Camera.main.transform.position;
+            cameraRotationWhenClicked = Camera.main.transform.rotation;
+
+            Debug.Log("User clicked on the object at time: " + currentTime);
+            Debug.Log("HLoD: " + hQuadrant);
+            Debug.Log("VLoD: " + vQuadrant);
+            Debug.Log("ArrowTime: " + arrowAppearTimeMicros);
+            Debug.Log("Hangle: " + alphaHLoD);
+            Debug.Log("Vangle: " + betaVLoD);
+            Debug.Log("Distance: " + distance);
+            Debug.Log("ObjectPosition: " + objectPosition);
+            Debug.Log("CamerapositionAtStart:" + cameraPositionAtStart);
+            Debug.Log("CameraRotationAtStart:" + cameraRotationAtStart);
+            Debug.Log("CamerapositionwhenClicked:" + cameraPositionWhenClicked);
+            Debug.Log("CameraRotationewhenClicked:" + cameraRotationWhenClicked);
+            // Generate a unique ID for this set of measurements
+            string uniqueID = $"{userName}_{sessionID}_{DateTime.Now:yyyyMMddHHmmss}";
+
+            // Save the measurement data in a folder with the unique ID
+            string measurementFolder = Path.Combine(rootDataFolder, uniqueID);
+            if (!Directory.Exists(measurementFolder))
+            {
+                Directory.CreateDirectory(measurementFolder);
+            }
+
+            string measurementFilePath = Path.Combine(measurementFolder, "measurement.txt");
+
+            SaveMeasurementData(measurementFilePath);
+            MeasurementData measurement = new MeasurementData
+            {
+                SampleID = sampleID,
+                SessionID = sessionID,
+                UserName = userName,
+                ObjectType = GetObjectTypeString(),
+                Intrinsic = CalculateIntrinsicMatrix(),
+                Extrinsic = CalculateExtrinsicMatrix(),
+                cameraPositionAtStart = mainCamera.transform.position,
+                cameraRotationAtStart = mainCamera.transform.rotation,
+                cameraPositionWhenClicked = Camera.main.transform.position,
+                cameraRotationWhenClicked = Camera.main.transform.rotation,
+                distance = (float)UnityEngine.Random.Range(minDistance, maxDistance),
+                objectPosition = objectPosition,
+                distortionVector = new Vector3(UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f)),
+                scalingFactor = UnityEngine.Random.Range(0.3f, 0.5f),
+                hQuadrant = UnityEngine.Random.Range(1, 5),
+                vQuadrant = UnityEngine.Random.Range(1, 5),
+                alphaHLoD = (Mathf.PI / 4) * hQuadrant,
+                betaVLoD = (Mathf.PI / 4) * vQuadrant,
+                Color = Color
+            };
+
+            measurements.Add(measurement);
+
+            instantiatedObject.SetActive(false);
+            instantiatedArrow.SetActive(false);
+
+            if (thankYouObject != null)
+            {
+                thankYouObject.SetActive(true);
+            }
+            StartCoroutine(PauseAndInstantiateNewObject());
+        }
+    }
+    private IEnumerator PauseAndInstantiateNewObject()
+    {
+        yield return new WaitForSeconds(2.0f); 
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(false);
+        }
+        arrowCreate();
+        DrawObjectPositions();
+    }
+    private void SaveMeasurementData(string filePath)
+    {
+        MeasurementData measurement = new MeasurementData
+        {
+            ObjectType = GetObjectTypeString(),
+            Intrinsic = CalculateIntrinsicMatrix(),
+            Extrinsic = CalculateExtrinsicMatrix(),
+            cameraPositionAtStart = mainCamera.transform.position,
+            cameraRotationAtStart = mainCamera.transform.rotation,
+            cameraPositionWhenClicked = Camera.main.transform.position,
+            cameraRotationWhenClicked = Camera.main.transform.rotation,
+            distance = (float)UnityEngine.Random.Range(minDistance, maxDistance),
+            objectPosition = objectPosition,
+            distortionVector = new Vector3(UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f), UnityEngine.Random.Range(0.4f, 0.5f)),
+            scalingFactor = UnityEngine.Random.Range(0.3f, 0.5f),
+            hQuadrant = UnityEngine.Random.Range(1, 5),
+            vQuadrant = UnityEngine.Random.Range(1, 5),
+            alphaHLoD = (Mathf.PI / 4) * hQuadrant,
+            betaVLoD = (Mathf.PI / 4) * vQuadrant,
+            Color = Color
+        };
+
+        measurements.Add(measurement);
+
+        // Create a string representation of the measurement data
+        string measurementText = MeasurementDataToString(measurement);
+
+        // Write the string to the file
+        File.WriteAllText(filePath, measurementText);
+    }
+    private string MeasurementDataToString(MeasurementData measurement)
+    {
+        // Convert the measurement data to a formatted string
+        string result = "";
+        result += $"SampleID: {measurement.SampleID}\n";
+        result += $"SessionID: {measurement.SessionID}\n";
+        result += $"UserName: {measurement.UserName}\n";
+        result += $"ObjectType: {measurement.ObjectType}\n";
+        result += $"Color: {measurement.Color}\n";
+        result += $"Intrinsic: {MatrixToString(measurement.Intrinsic)}\n";
+        result += $"Extrinsic: {MatrixToString(measurement.Extrinsic)}\n";
+        result += $"CameraPositionAtStart: {VectorToString(measurement.cameraPositionAtStart)}\n";
+        result += $"CameraRotationAtStart: {QuaternionToString(measurement.cameraRotationAtStart)}\n";
+        result += $"CameraPositionWhenClicked: {VectorToString(measurement.cameraPositionWhenClicked)}\n";
+        result += $"CameraRotationWhenClicked: {QuaternionToString(measurement.cameraRotationWhenClicked)}\n";
+        result += $"Distance: {measurement.distance}\n";
+        result += $"ObjectPosition: {VectorToString(measurement.objectPosition)}\n";
+        result += $"DistortionVector: {VectorToString(measurement.distortionVector)}\n";
+        result += $"ScalingFactor: {measurement.scalingFactor}\n";
+        result += $"HQuadrant: {measurement.hQuadrant}\n";
+        result += $"VQuadrant: {measurement.vQuadrant}\n";
+        result += $"AlphaHLoD: {measurement.alphaHLoD}\n";
+        result += $"BetaVLoD: {measurement.betaVLoD}\n";
+
+
+        return result;
+    }
+    private void LoadMeasurementData()
+    {
+        // Loop through measurement data folders in the root folder
+        foreach (var measurementFolder in Directory.GetDirectories(rootDataFolder))
+        {
+            string measurementFilePath = Path.Combine(measurementFolder, "measurement.txt");
+
+            if (File.Exists(measurementFilePath))
+            {
+                // Read the text from the file
+                string measurementText = File.ReadAllText(measurementFilePath);
+
+                // Parse the text into a MeasurementData object
+                MeasurementData measurement = StringToMeasurementData(measurementText);
+
+                // Add the measurement to the list
+                measurements.Add(measurement);
+            }
+        }
+    }
+
+    private MeasurementData StringToMeasurementData(string measurementText)
+    {
+        // Parse the formatted string back into a MeasurementData object
+        MeasurementData measurement = new MeasurementData();
+        string[] lines = measurementText.Split('\n');
+        foreach (var line in lines)
+        {
+            string[] parts = line.Split(':');
+            if (parts.Length == 2)
+            {
+                string key = parts[0].Trim();
+                string value = parts[1].Trim();
+                switch (key)
+                {
+                    case "SampleID":
+                        measurement.SampleID = value;
+                        break;
+                    case "SessionID":
+                        measurement.SessionID = value;
+                        break;
+                    case "UserName":
+                        measurement.UserName = value;
+                        break;
+                    case "ObjectType":
+                        measurement.ObjectType = value;
+                        break;
+                    case "Color":
+                        measurement.Color = value;
+                        break;
+                    case "Intrinsic":
+                        // Parse and set the Intrinsic matrix here if it's in a specific format
+                        break;
+                    case "Extrinsic":
+                        // Parse and set the Extrinsic matrix here if it's in a specific format
+                        break;
+                    case "CameraPositionAtStart":
+                        // Parse and set the camera position at start here if it's in a specific format
+                        break;
+                    case "CameraRotationAtStart":
+                        // Parse and set the camera rotation at start here if it's in a specific format
+                        break;
+                    case "CameraPositionWhenClicked":
+                        // Parse and set the camera position when clicked here if it's in a specific format
+                        break;
+                    case "CameraRotationWhenClicked":
+                        // Parse and set the camera rotation when clicked here if it's in a specific format
+                        break;
+                    case "Distance":
+                        // Parse and set the distance here if it's in a specific format
+                        break;
+                    case "ObjectPosition":
+                        // Parse and set the object position here if it's in a specific format
+                        break;
+                    case "DistortionVector":
+                        // Parse and set the distortion vector here if it's in a specific format
+                        break;
+                    case "ScalingFactor":
+                        // Parse and set the scaling factor here if it's in a specific format
+                        break;
+                    case "HQuadrant":
+                        // Parse and set the HQuadrant here if it's in a specific format
+                        break;
+                    case "VQuadrant":
+                        // Parse and set the VQuadrant here if it's in a specific format
+                        break;
+                    case "AlphaHLoD":
+                        // Parse and set the AlphaHLoD here if it's in a specific format
+                        break;
+                    case "BetaVLoD":
+                        // Parse and set the BetaVLoD here if it's in a specific format
+                        break;
+                        // Add parsing for other properties as needed...
+                }
+            }
+        }
+        return measurement;
+    }
+
+    private string GetObjectTypeString()
+    {
+        if (chosenObjectType == 0) return "S";
+        if (chosenObjectType == 1) return "C";
+        if (chosenObjectType == 2) return "M";
+        return "-";
+    }
+    private Matrix4x4 CalculateExtrinsicMatrix()
+    {
+        // Calculate the extrinsic matrix based on the estimated camera pose
+        Vector3 cameraPosition = Camera.main.transform.position;
+        Quaternion cameraRotation = Camera.main.transform.rotation;
+        Matrix4x4 extrinsicMatrix = Matrix4x4.TRS(cameraPosition, cameraRotation, Vector3.one);
+
+        return extrinsicMatrix;
+    }
+    private Matrix4x4 CalculateIntrinsicMatrix()
+    {
+        float focalLength = Camera.main.fieldOfView;
+        float aspect = Camera.main.aspect;
+        float sensorWidth = Camera.main.sensorSize.x;
+        // Calculate the intrinsic matrix based on the estimated parameters
+        Matrix4x4 intrinsicMatrix = Matrix4x4.identity;
+        intrinsicMatrix[0, 0] = focalLength / aspect;
+        intrinsicMatrix[1, 1] = focalLength;
+        intrinsicMatrix[0, 2] = Camera.main.pixelWidth / 2.0f;
+        intrinsicMatrix[1, 2] = Camera.main.pixelHeight / 2.0f;
+
+        return intrinsicMatrix;
+    }
+
+    void Update()
+    {
+        if (thankYouObject != null)
+        {           
+            thankYouObject.transform.parent = Camera.main.transform;            
+            thankYouObject.transform.localRotation = Quaternion.identity;
+        }
+        if (instantiatedArrow != null && instantiatedObject != null)
+        {
+            Vector3 cameraPosition = Camera.main.transform.position;
+            Quaternion cameraRotation = Camera.main.transform.rotation;
+            instantiatedArrow.transform.position = cameraPosition + cameraRotation * arrowPosition;
+            Vector3 directionToObject = instantiatedObject.transform.position - instantiatedArrow.transform.position;
+            Quaternion arrowRotation = Quaternion.LookRotation(directionToObject, Vector3.up);
+            instantiatedArrow.transform.rotation = arrowRotation;
+
+        }
+    }
+   
+
+    private string MatrixToString(Matrix4x4 matrix)
+    {
+        string[] elements = new string[16];
+        for (int i = 0; i < 16; i++)
+        {
+            elements[i] = matrix[i].ToString();
+        }
+        return string.Join(",", elements);
+    }
+    private string VectorToString(Vector3 vector)
+    {
+        return string.Join(",", vector.x, vector.y, vector.z);
+    }
+
+    private string QuaternionToString(Quaternion quaternion)
+    {
+        return string.Join(",", quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+    }
+
+    private string ColorToString(Color color)
+    {
+        return string.Join(",", color.r, color.g, color.b);
+    }
+
+}
