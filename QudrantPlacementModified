@@ -77,7 +77,7 @@ public class ObjectPlacement : MonoBehaviour
         public double alphaHLoD { get; set; }
         public double betaVLoD { get; set; }
         public double distance { get; set; }
-        public Color Color;
+        public string Color;
     }
     List<MeasurementData> measurements = new List<MeasurementData>();
     List<string> userNames = new List<string>();
@@ -188,7 +188,7 @@ public class ObjectPlacement : MonoBehaviour
                 vQuadrant = UnityEngine.Random.Range(1, 5),
                 alphaHLoD = (Mathf.PI / 4) * hQuadrant,
                 betaVLoD = (Mathf.PI / 4) * vQuadrant,
-                Color = initialObjectColor,
+                Color = initialObjectColor.ToString(),
             };
 
             measurements.Add(measurement);
