@@ -1,17 +1,28 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem.Composites;
+using UnityEngine.SceneManagement;
+
 
 public class Input_Activator : MonoBehaviour
 {
     private TouchScreenKeyboard keyboard;
     private InputField inputField;
+   // public TMP_InputField inputfield;
     private bool isKeyboardOpen = false;
+    private const string UserInputKey = "UserInput"; // Key for PlayerPrefs
 
     void Start()
     {
         inputField = GetComponent<InputField>();
+
+        // Add a null check here
+        if (inputField != null)
+        {
+            LoadSavedInput(); // Load saved input
+        }
     }
+
 
     public void OpenKeyboard()
     {
@@ -45,6 +56,36 @@ public class Input_Activator : MonoBehaviour
         if (keyboard != null && keyboard.status == TouchScreenKeyboard.Status.Visible)
         {
             inputField.text = keyboard.text;
+        }
+    }
+
+    public void LoadExperimentScene()
+    {
+        SceneManager.LoadScene("Experiment");
+    }
+
+    public void LoadTrainingScene()
+    {
+        SceneManager.LoadScene("Training");
+    }
+
+    // Method to save the current input
+    public void SaveInput()
+    {
+        if (inputField != null)
+        {
+            PlayerPrefs.SetString(UserInputKey, inputField.text);
+            PlayerPrefs.Save();
+            Debug.Log("Info saved: " + inputField.text);
+        }
+    }
+
+    // Method to load saved input
+    private void LoadSavedInput()
+    {
+        if (PlayerPrefs.HasKey(UserInputKey))
+        {
+            inputField.text = PlayerPrefs.GetString(UserInputKey);
         }
     }
 }
