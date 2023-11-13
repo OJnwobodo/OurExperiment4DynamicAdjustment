@@ -1,56 +1,50 @@
 using UnityEngine;
-using MixedReality.Toolkit.UX;
 using UnityEngine.UI;
 using UnityEngine.InputSystem.Composites;
-using System;
 
 public class Input_Activator : MonoBehaviour
 {
-    public string keyboardText;
-    [SerializeField]
     private TouchScreenKeyboard keyboard;
-    //private KeyboardPreview keyboardPreview;
-    private PressableButton button;
     private InputField inputField;
-   // private MRTKTMPInputField MRTKTMPInput;
+    private bool isKeyboardOpen = false;
 
-    // Start is called before the first frame update
     void Start()
     {
         inputField = GetComponent<InputField>();
-        //Text Area
-        inputField = GetComponentInChildren<InputField>();
-        //Action Button
-        // button = keyboardPreview.GetComponentInChildren<PressableButton>();
-        //Keyboard open
-        keyboard = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default, false, false, false, false);
     }
 
-    // Update is called once per frame
+    public void OpenKeyboard()
+    {
+        if (!isKeyboardOpen)
+        {
+            keyboard = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default);
+            isKeyboardOpen = true;
+        }
+    }
+
+    public void CloseKeyboard()
+    {
+        if (isKeyboardOpen)
+        {
+            isKeyboardOpen = false;
+            keyboard = null;
+        }
+    }
 
     void Update()
     {
-        // Check if MRTKTMPInput is not null and is focused before activating the keyboard
-        if (inputField != null && inputField.isFocused)
+        if (inputField != null && inputField.isFocused && !isKeyboardOpen)
         {
-            if (keyboard != null)
-            {
-                keyboard.active = true;
-            }
+            OpenKeyboard();
         }
-        else
+        else if (inputField != null && inputField.isActiveAndEnabled && keyboard != null)
         {
-            if (keyboard != null)
-            {
-                keyboard.active = false;
-            }
+            CloseKeyboard();
         }
 
-        // Check if MRTKTMPInput is not null and is active before saving the text
-        if (inputField != null && inputField.isActiveAndEnabled && keyboard != null)
+        if (keyboard != null && keyboard.status == TouchScreenKeyboard.Status.Visible)
         {
-            keyboardText = keyboard.text;
-            inputField.text = keyboardText;
+            inputField.text = keyboard.text;
         }
     }
 }
