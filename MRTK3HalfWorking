@@ -1,0 +1,265 @@
+using UnityEngine;
+using System.Collections;
+using Random = UnityEngine.Random;
+using MixedReality.Toolkit;
+using MixedReality.Toolkit.Input;
+using UnityEngine.XR.Interaction.Toolkit;
+using System.Collections.Generic;
+using Microsoft.MixedReality.OpenXR;
+using MixedReality.Toolkit.SpatialManipulation;
+public class ObjectPlacement : MonoBehaviour
+{
+    // Object Prefabs
+    public GameObject SphereObject;
+    public GameObject CubeObject;
+    public GameObject CarObject;
+    public GameObject ArrowPrefab;
+    public GameObject thankYouObject;
+
+    // Camera and Arrow Settings
+    private Camera mainCamera;
+    private GameObject instantiatedArrow;
+    private GameObject instantiatedObject;
+    private Vector3 arrowPosition = new Vector3(0.0f, -1.0f, 4.0f);
+    private Vector3 arrowScale = new Vector3(2.0f, 20.0f, 20.0f);
+
+    // Object Positioning and Difficulty Parameters
+    private double alphaHLoD;
+    private double betaVLoD;
+    private float distance;
+    public float minDistance = 0.3f;
+    public float maxDistance = 6.0f;
+    public Vector3 distortionVector;
+    public float scalingFactor = 1f;
+
+
+    class MyInteractor: XRBaseControllerInteractor
+    {
+        public override void GetValidTargets(List<IXRInteractable> targets)
+        {
+            targets.Clear();
+
+            if (interactablesSelected != null)
+            {
+                foreach (var interactable in interactablesSelected)
+                {
+                    targets.Add(interactable);
+                }
+            }
+
+            // Alternative logic can be added here if needed
+        }
+    }
+   
+
+    void Start()
+    {
+        mainCamera = Camera.main;
+        ArrowCreate();
+        DrawObjectPositions();
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(false);
+        }
+    }
+
+    private void ArrowCreate()
+    {
+        instantiatedArrow = Instantiate(ArrowPrefab, arrowPosition, Quaternion.identity);
+        instantiatedArrow.transform.localScale = arrowScale;
+        instantiatedArrow.SetActive(true);
+    }
+
+    public void DrawObjectPositions()
+    {
+        // Define specific ranges for each quadrant
+        int hQuadrant = Random.Range(1, 5);
+        int vQuadrant = Random.Range(1, 5);
+
+        // Adjust the range of angles based on the quadrant
+        alphaHLoD = DetermineAngleRange(hQuadrant);
+        betaVLoD = DetermineAngleRange(vQuadrant);
+
+        // Use these angles to calculate the direction
+        Vector3 direction = new Vector3(
+            Mathf.Cos((float)alphaHLoD) * Mathf.Cos((float)betaVLoD),
+            Mathf.Sin((float)betaVLoD),
+            Mathf.Sin((float)alphaHLoD) * Mathf.Cos((float)betaVLoD)
+        ).normalized;
+
+        // Adjust distance based on difficulty level
+        distance = DetermineDistanceByQuadrant(hQuadrant, vQuadrant);
+
+        Vector3 objectPosition = mainCamera.transform.position + (direction * distance);
+
+        // Instantiate object
+        GameObject prefabToInstantiate = SelectPrefab();
+        instantiatedObject = Instantiate(prefabToInstantiate, objectPosition, Quaternion.identity);
+        AddInteractionEventListeners(instantiatedObject);
+
+        ApplyObjectTransformations();
+    }
+
+    private void AddInteractionEventListeners(GameObject obj)
+    {
+        var interactable = obj.GetComponent<XRBaseInteractable>();
+        if (interactable == null)
+        {
+            interactable = obj.AddComponent<XRGrabInteractable>(); // Example for grabbable objects
+        }
+
+        // Select Entered
+        interactable.selectEntered.AddListener(HandleSelectEntered);
+
+        // Hover Entered
+        interactable.hoverEntered.AddListener(HandleHoverEntered);
+
+        // Grab or touch event listeners can be added similarly...
+    }
+
+    private void HandleSelectEntered(SelectEnterEventArgs args)
+    {
+        instantiatedObject.SetActive(false);
+        instantiatedArrow.SetActive(false);
+
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(true);
+            StartCoroutine(PauseAndInstantiateNewObject());
+        }
+    }
+
+    private void HandleHoverEntered(HoverEnterEventArgs args)
+    {
+        instantiatedObject.SetActive(false);
+        instantiatedArrow.SetActive(false);
+
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(true);
+            StartCoroutine(PauseAndInstantiateNewObject());
+        }
+    }
+
+    // Define similar handlers for grab, touch, click, etc.
+
+
+    private IEnumerator PauseAndInstantiateNewObject()
+    {
+        yield return new WaitForSeconds(2.0f);
+        thankYouObject.SetActive(false);
+        ArrowCreate();
+        DrawObjectPositions();
+    }
+
+    private double DetermineAngleRange(int quadrant)
+    {
+        // Define angle ranges for each quadrant to control difficult
+        switch (quadrant)
+        {
+            case 1: return Random.Range(0, Mathf.PI / 4); // Easiest
+            case 2: return Random.Range(Mathf.PI / 4, Mathf.PI / 2);
+            case 3: return Random.Range(Mathf.PI / 2, 3 * Mathf.PI / 4);
+            case 4: return Random.Range(3 * Mathf.PI / 4, Mathf.PI); // Hardest
+            default: return 0;
+        }
+    }
+
+    private float DetermineDistanceByQuadrant(int hQuad, int vQuad)
+    {
+        // Define distance ranges for each quadrant
+        int maxDifficultyQuad = Mathf.Max(hQuad, vQuad);
+        switch (maxDifficultyQuad)
+        {
+            case 1: return Random.Range(minDistance, (minDistance + maxDistance) / 4);
+            case 2: return Random.Range((minDistance + maxDistance) / 4, (minDistance + maxDistance) / 2);
+            case 3: return Random.Range((minDistance + maxDistance) / 2, 3 * (minDistance + maxDistance) / 4);
+            case 4: return Random.Range(3 * (minDistance + maxDistance) / 4, maxDistance);
+            default: return minDistance;
+        }
+    }
+    private GameObject SelectPrefab()
+    {
+        GameObject prefabToInstantiate = null;
+        int objectType = Random.Range(0, 3);
+
+        switch (objectType)
+        {
+            case 0:
+                prefabToInstantiate = SphereObject;
+                AddRequiredComponents(prefabToInstantiate, typeof(SphereCollider));
+                break;
+            case 1:
+                prefabToInstantiate = CubeObject;
+                AddRequiredComponents(prefabToInstantiate, typeof(BoxCollider));
+                break;
+            case 2:
+                prefabToInstantiate = CarObject;
+                // Add specific components for CarObject if needed
+                break;
+        }
+
+        return prefabToInstantiate;
+    }
+
+    private void AddRequiredComponents(GameObject obj, System.Type colliderType)
+    {
+        // Add Collider
+        Collider collider = obj.GetComponent<Collider>();
+        if (collider == null)
+        {
+            collider = (Collider)obj.AddComponent(colliderType);
+        }
+
+        // Set collider properties if needed
+        if (collider is SphereCollider sphereCollider)
+        {
+            sphereCollider.radius = 1.0f; // Set the radius as needed
+        }
+        else if (collider is BoxCollider boxCollider)
+        {
+            boxCollider.size = new Vector3(1, 1, 1); // Set the size as needed
+        }
+
+        XRBaseInteractable interactable = obj.GetComponent<XRBaseInteractable>();
+        if (interactable == null)
+        {
+            interactable = obj.AddComponent<XRBaseInteractable>();
+        }
+    }
+
+
+        private void ApplyObjectTransformations()
+    {
+        distortionVector = new Vector3(Random.Range(0.4f, 0.5f), Random.Range(0.4f, 0.5f), Random.Range(0.4f, 0.5f));
+        scalingFactor = Random.Range(0.3f, 0.5f);
+        Color color = new Color(Random.value, Random.value, Random.value);
+        instantiatedObject.transform.localScale = distortionVector * scalingFactor;
+        instantiatedObject.GetComponent<Renderer>().material.color = color;
+        instantiatedArrow.transform.LookAt(instantiatedObject.transform);
+        SphereCollider collider = instantiatedObject.AddComponent<SphereCollider>();
+        collider.radius = 1.0f;
+    }
+    void Update()
+    {
+        if (thankYouObject != null)
+        {
+            thankYouObject.transform.parent = Camera.main.transform;
+            thankYouObject.transform.localRotation = Quaternion.identity;
+        }
+        if (instantiatedArrow != null && instantiatedObject != null)
+        {
+            UpdateArrowPosition();
+        }
+    }
+
+    private void UpdateArrowPosition()
+    {
+        Vector3 cameraPosition = Camera.main.transform.position;
+        Quaternion cameraRotation = Camera.main.transform.rotation;
+        instantiatedArrow.transform.position = cameraPosition + cameraRotation * arrowPosition;
+        Vector3 directionToObject = instantiatedObject.transform.position - instantiatedArrow.transform.position;
+        Quaternion arrowRotation = Quaternion.LookRotation(directionToObject, Vector3.up);
+        instantiatedArrow.transform.rotation = arrowRotation;
+    }
+}
