@@ -1,0 +1,186 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using TMPro;
+using System;
+
+public class Input_Activator : MonoBehaviour
+{
+    private TouchScreenKeyboard keyboard;
+    public TMP_InputField usernameInputField; // Reference to username TMP input field
+    public TMP_InputField sessionIdInputField; // Reference to sessionId TMP input field
+    public TMP_InputField nofSamplesInputField; // Reference to NofSamples TMP input field
+    private bool isKeyboardOpen = false;
+
+    // Keys for PlayerPrefs
+    private const string UsernameKey = "Username";
+    private const string SessionIdKey = "SessionId";
+    private const string NofSamplesKey = "NofSamples";
+
+
+    void Start()
+    {
+        LoadSavedInput(); // Load saved inputs for all fields
+    }
+
+    public void OpenKeyboard()
+    {
+        if (!isKeyboardOpen)
+        {
+            keyboard = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default);
+            isKeyboardOpen = true;
+        }
+    }
+
+    public void CloseKeyboard()
+    {
+        if (isKeyboardOpen)
+        {
+            isKeyboardOpen = false;
+            keyboard = null;
+        }
+    }
+
+    void Update()
+    {
+        // Check if any input field is focused
+        bool isAnyFieldFocused = usernameInputField.isFocused || sessionIdInputField.isFocused || nofSamplesInputField.isFocused;
+
+        // Open the keyboard if an input field is focused and it's not already open
+        if (isAnyFieldFocused && !isKeyboardOpen)
+        {
+            OpenKeyboard();
+        }
+
+        // Close the keyboard if it's open, and no input field is focused
+        else if (!isAnyFieldFocused && isKeyboardOpen)
+        {
+            CloseKeyboard();
+        }
+
+        // Update the input fields when the keyboard text changes
+        if (keyboard != null && keyboard.status == TouchScreenKeyboard.Status.Visible)
+        {
+            // The keyboard.text might not be updated immediately, 
+            // so we use the TextChanged event to capture changes.
+            UpdateInputFieldText(usernameInputField);
+            UpdateInputFieldText(sessionIdInputField);
+            UpdateInputFieldText(nofSamplesInputField);
+        }
+    }
+
+    private void UpdateInputFieldText(TMP_InputField inputField)
+    {
+        if (keyboard != null && inputField != null && !string.Equals(inputField.text, keyboard.text))
+        {
+            inputField.text = keyboard.text;
+        }
+
+        if (keyboard != null && keyboard.status == TouchScreenKeyboard.Status.Visible)
+        {
+            if (usernameInputField != null && usernameInputField.isFocused)
+            {
+                usernameInputField.text = keyboard.text;
+            }
+            else if (sessionIdInputField != null && sessionIdInputField.isFocused)
+            {
+                sessionIdInputField.text = keyboard.text;
+            }
+            else if (nofSamplesInputField != null && nofSamplesInputField.isFocused)
+            {
+                nofSamplesInputField.text = keyboard.text;
+            }
+        }
+    }
+
+
+    public void LoadExperimentScene()
+    {
+        SceneManager.LoadScene("Experiment");
+    }
+
+    public void LoadTrainingScene()
+    {
+        SceneManager.LoadScene("Training");
+    }
+
+    // Method to save the current inputs
+    // Helper method to parse input field to the desired type
+    private bool TryParseInputField<T>(string input, out T result)
+    {
+        try
+        {
+            result = (T)Convert.ChangeType(input, typeof(T));
+            return true;
+        }
+        catch (FormatException)
+        {
+            result = default(T);
+            return false;
+        }
+    }
+
+    public void SaveInput()
+    {
+        if (TryParseInputField(usernameInputField.text, out string username))
+        {
+            SaveField(username, UsernameKey);
+        }
+        else
+        {
+            Debug.LogError("Failed to parse username. Please enter a valid value.");
+        }
+
+        if (TryParseInputField(sessionIdInputField.text, out string sessionId))
+        {
+            SaveField(sessionId, SessionIdKey);
+        }
+        else
+        {
+            Debug.LogError("Failed to parse session ID. Please enter a valid value.");
+        }
+
+        if (TryParseInputField(nofSamplesInputField.text, out int nofSamplesValue))
+        {
+            SaveField(nofSamplesValue.ToString(), NofSamplesKey);
+        }
+        else
+        {
+            Debug.LogError("Failed to parse the number of samples. Please enter a valid numeric value.");
+        }
+
+        PlayerPrefs.Save(); // Save all PlayerPrefs at once
+        Debug.Log("All inputs saved");
+    }
+
+    // Helper method to save individual TMP input field
+    private void SaveField<T>(T fieldValue, string key)
+    {
+        if (fieldValue != null)
+        {
+            PlayerPrefs.SetString(key, fieldValue.ToString());
+            Debug.Log($"{key} saved: {fieldValue}");
+        }
+        else
+        {
+            Debug.LogError($"Field {key} is null.");
+        }
+    }
+
+
+    // Method to load saved inputs
+    private void LoadSavedInput()
+    {
+        LoadField(usernameInputField, UsernameKey);
+        LoadField(sessionIdInputField, SessionIdKey);
+        LoadField(nofSamplesInputField, NofSamplesKey);
+    }
+
+    // Helper method to load individual TMP input field
+    private void LoadField(TMP_InputField field, string key)
+    {
+        if (field != null && PlayerPrefs.HasKey(key))
+        {
+            field.text = PlayerPrefs.GetString(key);
+        }
+    }
+}
