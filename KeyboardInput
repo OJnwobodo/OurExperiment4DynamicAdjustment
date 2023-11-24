@@ -1,0 +1,165 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using TMPro;
+
+public class Input_Activator : MonoBehaviour
+{
+    private TouchScreenKeyboard keyboard;
+    private TMP_InputField focusedInputField;
+    private bool isKeyboardOpen = false;
+    private bool isInputSaved = false;
+
+    // References to TMP input fields
+    public TMP_InputField usernameInputField;
+    public TMP_InputField sessionIdInputField;
+    public TMP_InputField nofSamplesInputField;
+
+    // Keys for PlayerPrefs
+    private const string UsernameKey = "Username";
+    private const string SessionIdKey = "SessionId";
+    private const string NofSamplesKey = "NofSamples";
+
+    public TMP_Text nofSamplesDisplayText;
+
+    void Start()
+    {
+        LoadSavedInput(); // Load saved inputs for all fields
+    }
+
+    public void OpenKeyboard(TMP_InputField inputField)
+    {
+        if (!isKeyboardOpen)
+        {
+            keyboard = TouchScreenKeyboard.Open(inputField.text, TouchScreenKeyboardType.Default);
+            focusedInputField = inputField;
+            isKeyboardOpen = true;
+        }
+    }
+
+    public void CloseKeyboard()
+    {
+        if (isKeyboardOpen)
+        {
+            isKeyboardOpen = false;
+            keyboard = null;
+            focusedInputField = null;
+        }
+    }
+
+    void Update()
+    {
+        // Check if any input field is focused
+        bool isAnyFieldFocused = usernameInputField.isFocused || sessionIdInputField.isFocused || nofSamplesInputField.isFocused;
+
+        // Open the keyboard if an input field is focused and it's not already open
+        if (isAnyFieldFocused && !isKeyboardOpen)
+        {
+            if (usernameInputField.isFocused)
+                OpenKeyboard(usernameInputField);
+            else if (sessionIdInputField.isFocused)
+                OpenKeyboard(sessionIdInputField);
+            else if (nofSamplesInputField.isFocused)
+                OpenKeyboard(nofSamplesInputField);
+        }
+
+        // Close the keyboard if it's open, and no input field is focused
+        else if (!isAnyFieldFocused && isKeyboardOpen)
+        {
+            CloseKeyboard();
+        }
+
+        // Update the input field when the keyboard text changes
+        if (keyboard != null && keyboard.status == TouchScreenKeyboard.Status.Visible && focusedInputField != null)
+        {
+            focusedInputField.text = keyboard.text;
+        }
+    }
+
+    public void LoadExperimentScene()
+    {
+        SaveInput(); // Save the input before loading the scene
+        SceneManager.LoadScene("Experiment");
+    }
+
+    public void LoadTrainingScene()
+    {
+        SaveInput(); // Save the input before loading the scene
+        SceneManager.LoadScene("Training");
+    }
+
+    // Method to save the current inputs
+    public void SaveInput()
+    {
+        SaveUserParameters();
+        isInputSaved = true;  // Set the flag to indicate that input is saved
+        DisplayNofSamples();
+    }
+
+    // Helper method to save individual TMP input field
+    private void SaveUserParameters()
+    {
+        if (usernameInputField != null && sessionIdInputField != null && nofSamplesInputField != null)
+        {
+            PlayerPrefs.SetString(UsernameKey, usernameInputField.text);
+            PlayerPrefs.SetString(SessionIdKey, sessionIdInputField.text);
+            PlayerPrefs.SetString(NofSamplesKey, nofSamplesInputField.text);
+
+            // Save to a file that can be accessed by HoloLens
+            SaveToFile();
+        }
+    }
+
+    // Method to save data to a file in the persistent data path
+    private void SaveToFile()
+    {
+        string filePath = Application.persistentDataPath + "/userData.txt";
+        string data = $"{UsernameKey}:{usernameInputField.text}\n{SessionIdKey}:{sessionIdInputField.text}\n{NofSamplesKey}:{nofSamplesInputField.text}";
+
+        System.IO.File.WriteAllText(filePath, data);
+    }
+
+    // Method to load saved inputs
+    public void LoadSavedInput()
+    {
+        LoadField(usernameInputField, UsernameKey);
+        LoadField(sessionIdInputField, SessionIdKey);
+        LoadField(nofSamplesInputField, NofSamplesKey);
+        DisplayNofSamples();
+    }
+
+    // Helper method to load individual TMP input field
+    public void LoadField(TMP_InputField field, string key)
+    {
+        if (field != null && PlayerPrefs.HasKey(key))
+        {
+            field.text = PlayerPrefs.GetString(key);
+        }
+    }
+
+    public void DisplayNofSamples()
+    {
+        if (nofSamplesDisplayText != null && isInputSaved)
+        {
+            nofSamplesDisplayText.text = $"Number of Samples: {nofSamplesInputField.text}  proceed to either training or experiment by clicking any of the buttons";
+        }
+    }
+
+    public void SaveNofSamples()
+    {
+        int nofSamples = int.Parse(nofSamplesInputField.text);
+        PlayerPrefs.SetInt(NofSamplesKey, nofSamples);
+    }
+
+    public int GetNumberOfSamples()
+    {
+        if (nofSamplesInputField != null && !string.IsNullOrEmpty(nofSamplesInputField.text) && int.TryParse(nofSamplesInputField.text, out int result))
+        {
+            return result;
+        }
+        else
+        {
+            // Return a default value if the input field is empty, null, or not a valid integer
+            return 10;
+        }
+    }
+}
