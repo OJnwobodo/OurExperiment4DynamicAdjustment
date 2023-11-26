@@ -1,0 +1,502 @@
+using UnityEngine;
+using System.Collections;
+using Random = UnityEngine.Random;
+using UnityEngine.XR.Interaction.Toolkit;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEngine.SceneManagement;
+using TMPro;
+using MixedReality.Toolkit;
+
+public class ObjectControl : MonoBehaviour
+{
+    // Object Prefabs
+    public GameObject SphereObject;
+    public GameObject CubeObject;
+    public GameObject CarObject;
+    public GameObject ArrowPrefab;
+    public GameObject thankYouObject;
+
+    // Camera and Arrow Settings
+    private Camera mainCamera;
+    private GameObject instantiatedArrow;
+    private GameObject instantiatedObject;
+    private Vector3 arrowPosition = new Vector3(0.0f, -1.0f, 4.0f);
+    private Vector3 arrowScale = new Vector3(2.0f, 20.0f, 20.0f);
+
+    // Object Positioning and Difficulty Parameters
+    private double alphaHLoD;
+    private double betaVLoD;
+    private float distance;
+    public float minDistance = 0.3f;
+    public float maxDistance = 6.0f;
+    public Vector3 distortionVector;
+    public float scalingFactor = 1f;
+    public int chosenObjectType;
+
+    private float timer;
+    private int nofSamples;
+    public TMP_InputField samplesCountInputField;
+    public Input_Activator menu;
+    private int remainingSamples;
+    public Vector3 inputFieldOffset = new Vector3(1.45f, 2.5f, 1f);
+
+
+
+    private List<ObjectMeasurements> measurementsList;
+    private List<ObjectMeasurements> collectedObjectDataList = new List<ObjectMeasurements>();
+    private XRRayInteractor rayInteractor;
+
+    // Object measurements
+    private float arrowAppearTime;
+    private float interactionTime;
+    private Vector3 cameraPositionAtArrowAppear;
+    private Quaternion cameraRotationAtArrowAppear;
+    private Vector3 cameraPositionAtInteraction;
+    private Quaternion cameraRotationAtInteraction;
+
+    public class ObjectMeasurements
+    {
+        public string GetObjectTypeString;
+        public Matrix4x4 Intrinsic;
+        public Matrix4x4 Extrinsic;
+        public Vector3 CameraPositionAtStart;
+        public Quaternion CameraRotationAtStart;
+        public Vector3 CameraPositionWhenClicked;
+        public Quaternion CameraRotationWhenClicked;
+        public float Distance;
+        public Vector3 ObjectPosition;
+        public Vector3 DistortionVector;
+        public float ScalingFactor;
+        public int HQuadrant;
+        public int VQuadrant;
+        public double AlphaHLoD;
+        public double BetaVLoD;
+        public string ObjectColor;        
+        public string Username { get; set; }
+        public string SessionId { get; set; }
+
+       // public ObjectMeasurements(string username, string sessionId)
+        //{
+        //    Username = username;
+         //   SessionId = sessionId;
+            // ... (initialize other fields as needed)
+        //}
+   }
+
+
+
+
+    void Start()
+    {
+        mainCamera = Camera.main;
+        ArrowCreate();
+        DrawObjectPositions();
+
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(false);
+        }
+
+        // Retrieve user information from Input_Activator script
+        Input_Activator inputActivator = FindObjectOfType<Input_Activator>();
+
+        if (inputActivator != null)
+        {
+            inputActivator.LoadSavedInput(); // Load saved input data
+
+            // Retrieve the username, session ID, and number of samples from Input_Activator
+            string username = inputActivator.usernameInputField.text;
+            string sessionId = inputActivator.sessionIdInputField.text;
+            int nofSamples = inputActivator.GetNumberOfSamples();
+
+            // Use the retrieved values or default values if not provided
+            if (string.IsNullOrEmpty(username))
+            {
+                username = "DefaultUsername";
+            }
+
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                sessionId = "DefaultSessionId";
+            }
+
+            // Use the user-provided number of samples or default if not provided
+            this.nofSamples = nofSamples > 0 ? nofSamples : 5;
+
+            // Update PlayerPrefs with the retrieved or default values
+            PlayerPrefs.SetString("Username", username);
+            PlayerPrefs.SetString("SessionId", sessionId);
+            PlayerPrefs.SetInt("NofSamples", this.nofSamples);
+        }
+        else
+        {
+            Debug.LogError("Input_Activator script not found! Make sure it's attached to a GameObject in the scene.");
+        }
+
+        remainingSamples = this.nofSamples;
+
+        // Assuming samplesCountInputField is a public TMP_InputField variable in your script
+        if (samplesCountInputField != null)
+        {
+            // Update the samples count text
+            UpdateSamplesCountText();
+        }
+        else
+        {
+            Debug.LogError("samplesCountInputField not set in the inspector!");
+        }
+    }
+    private void UpdateSamplesCountText()
+    {
+        if (samplesCountInputField != null)
+        {
+            samplesCountInputField.text = $"Samples: {remainingSamples}/{nofSamples}";
+            // Debugging statement
+            Debug.Log($"Updated samplesCountText: {samplesCountInputField.text}");
+        }
+    }
+
+    private void ArrowCreate()
+    {
+        instantiatedArrow = Instantiate(ArrowPrefab, arrowPosition, Quaternion.identity);
+        instantiatedArrow.transform.localScale = arrowScale;
+        instantiatedArrow.SetActive(true);
+        arrowAppearTime = Time.realtimeSinceStartup;
+        cameraPositionAtArrowAppear = Camera.main.transform.position;
+        cameraRotationAtArrowAppear = Camera.main.transform.rotation;
+    }
+
+    public void DrawObjectPositions()
+    {
+        // Define specific ranges for each quadrant
+        int hQuadrant = Random.Range(1, 5);
+        int vQuadrant = Random.Range(1, 5);
+
+        alphaHLoD = DetermineAngleRange(hQuadrant);
+        betaVLoD = DetermineAngleRange(vQuadrant);
+
+        float radius = Random.Range(minDistance, maxDistance);
+        float azimuthalAngle = (float)alphaHLoD;
+        float polarAngle = (float)betaVLoD;
+
+        float x = radius * Mathf.Sin(azimuthalAngle) * Mathf.Cos(polarAngle);
+        float y = radius * Mathf.Sin(azimuthalAngle) * Mathf.Sin(polarAngle);
+        float z = radius * Mathf.Cos(azimuthalAngle);
+
+        Vector3 objectPosition = mainCamera.transform.position + new Vector3(x, y, z);
+
+        // Instantiate object
+        GameObject prefabToInstantiate = SelectPrefab();
+        instantiatedObject = Instantiate(prefabToInstantiate, objectPosition, Quaternion.identity);
+        ApplyObjectTransformations();
+    }
+    private int DetermineQuadrant(double angle)
+    {
+        if (angle >= 0 && angle < Mathf.PI / 4)
+        {
+            return 1;
+        }
+        else if (angle >= Mathf.PI / 4 && angle < Mathf.PI / 2)
+        {
+            return 2;
+        }
+        else if (angle >= Mathf.PI / 2 && angle < 3 * Mathf.PI / 4)
+        {
+            return 3;
+        }
+        else
+        {
+            return 4;
+        }
+    }
+
+    private double DetermineAngleRange(int quadrant)
+    {
+        // Define angle ranges for each quadrant to control difficult
+        switch (quadrant)
+        {
+            case 1: return Random.Range(0, Mathf.PI / 4); // Easiest
+            case 2: return Random.Range(Mathf.PI / 4, Mathf.PI / 2);
+            case 3: return Random.Range(Mathf.PI / 2, 3 * Mathf.PI / 4);
+            case 4: return Random.Range(3 * Mathf.PI / 4, Mathf.PI); // Hardest
+            default: return 0;
+        }
+    }
+
+    private GameObject SelectPrefab()
+    {
+        chosenObjectType = Random.Range(0, 3);
+
+        switch (chosenObjectType)
+        {
+            case 0: return SphereObject;
+            case 1: return CubeObject;
+            case 2: return CarObject;
+            default: return null;
+        }
+    }
+
+
+    private void ApplyObjectTransformations()
+    {
+        distortionVector = new Vector3(Random.Range(0.4f, 0.5f), Random.Range(0.4f, 0.5f), Random.Range(0.4f, 0.5f));
+        scalingFactor = Random.Range(0.3f, 0.5f);
+        Color color = new Color(Random.value, Random.value, Random.value);
+        instantiatedObject.transform.localScale = distortionVector * scalingFactor;
+        instantiatedObject.GetComponent<Renderer>().material.color = color;
+        instantiatedArrow.transform.LookAt(instantiatedObject.transform);
+    }
+    private int GetNofSamplesFromUser()
+    {
+        // Retrieve the number of samples from the user input
+        if (GameObject.Find("InputActivator") != null)
+        {
+            Input_Activator inputActivator = GameObject.Find("InputActivator").GetComponent<Input_Activator>();
+            return int.Parse(inputActivator.nofSamplesInputField.text);
+        }
+
+
+        // Default to 10 if input activator is not found
+        return 10;
+    }
+    private void EndExperiment()
+    {
+        // Check if there are no remaining samples
+        if (remainingSamples <= 0)
+        {
+            // If yes, perform actions to return to the menu or do any other cleanup
+            ReturnToMenu();
+        }
+    }
+
+
+    private void ReturnToMenu()
+    {
+        SceneManager.LoadScene("Menu");
+    }
+
+    private void SaveObjectData()
+    {
+       // Define the directory path where you want to save the TXT files
+        string directoryPath = Path.Combine(Application.persistentDataPath, "ExperimentResults");
+
+        // Create the directory if it doesn't exist
+        Directory.CreateDirectory(directoryPath);
+
+        string timeStamp = System.DateTime.Now.ToString("yyyyMMddHHmmssfff");
+        string intrinsicFileName = "intrinsic_data_" + timeStamp + ".txt";
+        string extrinsicFileName = "extrinsic_data_" + timeStamp + ".txt";
+        string remainingFileName = "remaining_data_" + timeStamp + ".txt";
+
+        // Define the full paths to the CSV files
+        string intrinsicSavePath = Path.Combine(directoryPath, intrinsicFileName);
+        string extrinsicSavePath = Path.Combine(directoryPath, extrinsicFileName);
+        string remainingSavePath = Path.Combine(directoryPath, remainingFileName);
+
+        // Create StringBuilder objects for each TXT file
+        StringBuilder intrinsicTxtBuilder = new StringBuilder();
+        StringBuilder extrinsicTxtBuilder = new StringBuilder();
+        StringBuilder remainingTxtBuilder = new StringBuilder();
+
+        // Add TXT headers (column names) for each file
+        intrinsicTxtBuilder.AppendLine("Intrinsic");
+        extrinsicTxtBuilder.AppendLine("Extrinsic");
+        remainingTxtBuilder.AppendLine(" ObjectType,  cameraPositionAtStart,  cameraRotationAtStart,  cameraPositionWhenClicked,  cameraRotationWhenClicked,  distance,  objectPosition,  distortionVector,  scalingFactor,  hQuadrant,  VQuadrant,  alphaHLoD, betaVLoD,  Color ");
+
+        // Iterate through the collected object data and append it to the respective TXT builders
+        foreach (var data in collectedObjectDataList)
+        {
+            // Format the data as a TXT line for each type
+            string intrinsicTxtLine = MatrixToString(data.Intrinsic);
+            string extrinsicTxtLine = MatrixToString(data.Extrinsic);
+            string remainingTxtLine = $"{data.GetObjectTypeString},{VectorToString(data.CameraPositionAtStart)},  {QuaternionToString(data.CameraRotationAtStart)},  {VectorToString(data.CameraPositionWhenClicked)},  {QuaternionToString(data.CameraRotationWhenClicked)}, {data.Distance},  {VectorToString(data.ObjectPosition)},  {VectorToString(data.DistortionVector)},  {data.ScalingFactor},  {data.HQuadrant},  {data.VQuadrant},  {data.AlphaHLoD},  {data.BetaVLoD},  {data.ObjectColor}";
+
+            // Append data to respective TXT builders
+            intrinsicTxtBuilder.AppendLine(intrinsicTxtLine);
+            extrinsicTxtBuilder.AppendLine(extrinsicTxtLine);
+            remainingTxtBuilder.AppendLine(remainingTxtLine);
+        }
+
+        // Write the TXT data to files
+        File.WriteAllText(intrinsicSavePath, intrinsicTxtBuilder.ToString());
+        File.WriteAllText(extrinsicSavePath, extrinsicTxtBuilder.ToString());
+        File.WriteAllText(remainingSavePath, remainingTxtBuilder.ToString());
+    }
+
+    private string MatrixToString(Matrix4x4 matrix)
+    {
+        // Convert the matrix to a string (you can define your own format)
+        return matrix.ToString("F6");
+    }
+
+    private string VectorToString(Vector3 vector)
+    {
+        // Convert the vector to a string (you can define your own format)
+        return vector.ToString("F6");
+    }
+
+    private string QuaternionToString(Quaternion quaternion)
+    {
+        // Convert the quaternion to a string (you can define your own format)
+        return quaternion.ToString("F6");
+    }
+
+    private string ColorToString(Color color)
+    {
+        // Convert the color to a string (you can define your own format)
+        return color.ToString("F6");
+    }
+
+
+
+    void Update()
+    {
+        if (thankYouObject != null)
+        {
+            // Set parent using SetParent method with worldPositionStays set to false
+            thankYouObject.transform.SetParent(Camera.main.transform, false);
+            thankYouObject.transform.localRotation = Quaternion.identity;
+        }
+
+        if (instantiatedArrow != null && instantiatedObject != null)
+        {
+            UpdateArrowPosition();
+
+            if (instantiatedObject.GetComponent<MRTKBaseInteractable>().IsRaySelected ||
+                instantiatedObject.GetComponent<MRTKBaseInteractable>().IsGrabSelected)
+            {
+                interactionTime = Time.realtimeSinceStartup;
+                cameraPositionAtInteraction = Camera.main.transform.position;
+                cameraRotationAtInteraction = Camera.main.transform.rotation;
+
+                // Decrement remaining samples
+                remainingSamples--;
+
+                // Create an instance of ObjectMeasurements and initialize it with user information
+                //string username = PlayerPrefs.GetString("Username", "DefaultUsername");
+              //  string sessionId = PlayerPrefs.GetString("SessionId", "DefaultSessionId");
+                ObjectMeasurements measurements = new ObjectMeasurements();
+
+                // Capture additional measurements
+                measurements.GetObjectTypeString = GetObjectTypeString;
+                measurements.Intrinsic = CalculateIntrinsicMatrix();
+                measurements.Extrinsic = CalculateExtrinsicMatrix();
+                measurements.CameraPositionAtStart = cameraPositionAtArrowAppear;
+                measurements.CameraRotationAtStart = cameraRotationAtArrowAppear;
+                measurements.CameraPositionWhenClicked = cameraPositionAtInteraction;
+                measurements.CameraRotationWhenClicked = cameraRotationAtInteraction;
+                measurements.Distance = distance;
+                measurements.ObjectPosition = instantiatedObject.transform.position;
+                measurements.DistortionVector = distortionVector;
+                measurements.ScalingFactor = scalingFactor;
+                measurements.HQuadrant = DetermineQuadrant(alphaHLoD);
+                measurements.VQuadrant = DetermineQuadrant(betaVLoD);
+                measurements.AlphaHLoD = alphaHLoD;
+                measurements.BetaVLoD = betaVLoD;
+                measurements.ObjectColor = instantiatedObject.GetComponent<Renderer>().material.color.ToString();
+
+                // Add the instance to the list of collected object data
+                collectedObjectDataList.Add(measurements);
+
+                DestroyAndInstantiateNewObject();
+                UpdateSamplesCountText();
+                SaveObjectData();
+            }
+
+            if (samplesCountInputField != null)
+            {
+                // Update the samples count text
+                UpdateSamplesCountText();
+
+                // Move the input field with the user's head movement
+                samplesCountInputField.transform.position = Camera.main.transform.position + Camera.main.transform.rotation * inputFieldOffset;
+                samplesCountInputField.transform.rotation = Camera.main.transform.rotation;
+            }
+            else
+            {
+                Debug.LogError("samplesCountInputField not set in the inspector!");
+            }
+
+        }
+
+        timer += Time.deltaTime;
+
+        if (timer >= nofSamples)
+        {
+            EndExperiment();
+        }
+    }
+
+    private void DestroyAndInstantiateNewObject()
+    {
+        Destroy(instantiatedObject);
+        Destroy(instantiatedArrow);
+        instantiatedArrow.SetActive(false);
+        if (thankYouObject != null)
+        {
+            thankYouObject.SetActive(true);
+            StartCoroutine(PauseAndInstantiateNewObject());
+        }
+    }
+    private IEnumerator PauseAndInstantiateNewObject()
+    {
+        yield return new WaitForSeconds(1.5f);
+        thankYouObject.SetActive(false);
+        Destroy(instantiatedObject);
+        Destroy(instantiatedArrow);
+        ArrowCreate();
+        DrawObjectPositions();
+    }
+    public string GetObjectTypeString
+    {
+        get
+        {
+            switch (chosenObjectType)
+            {
+                case 0: return "S";
+                case 1: return "C";
+                case 2: return "M";
+                default: return "-";
+            }
+        }
+    }
+
+    private Matrix4x4 CalculateExtrinsicMatrix()
+    {
+        // Use the HoloLens 2 camera pose
+        Vector3 cameraPosition = Camera.main.transform.position;
+        Quaternion cameraRotation = Camera.main.transform.rotation;
+        Matrix4x4 extrinsicMatrix = Matrix4x4.TRS(cameraPosition, cameraRotation, Vector3.one);
+
+        return extrinsicMatrix;
+    }
+
+    private Matrix4x4 CalculateIntrinsicMatrix()
+    {
+        // Use HoloLens 2-specific field of view and aspect ratio
+        float holoLens2FieldOfView = 52.0f; // Update with the actual field of view of HoloLens 2
+        float aspect = Camera.main.aspect;
+
+        // Calculate the intrinsic matrix based on the estimated parameters
+        Matrix4x4 intrinsicMatrix = Matrix4x4.identity;
+        intrinsicMatrix[0, 0] = Mathf.Tan(Mathf.Deg2Rad * holoLens2FieldOfView / 2.0f);
+        intrinsicMatrix[1, 1] = intrinsicMatrix[0, 0] / aspect;
+        intrinsicMatrix[0, 2] = Camera.main.pixelWidth / 2.0f;
+        intrinsicMatrix[1, 2] = Camera.main.pixelHeight / 2.0f;
+
+        return intrinsicMatrix;
+    }
+
+
+    private void UpdateArrowPosition()
+    {
+        Vector3 cameraPosition = Camera.main.transform.position;
+        Quaternion cameraRotation = Camera.main.transform.rotation;
+        instantiatedArrow.transform.position = cameraPosition + cameraRotation * arrowPosition;
+        Vector3 directionToObject = instantiatedObject.transform.position - instantiatedArrow.transform.position;
+        Quaternion arrowRotation = Quaternion.LookRotation(directionToObject, Vector3.up);
+        instantiatedArrow.transform.rotation = arrowRotation;
+    }
+}
